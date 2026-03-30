@@ -15,6 +15,8 @@ import sys
 import subprocess
 import platform
 import time
+import re
+from urllib.parse import urlparse
 
 print("\n" + "=" * 60)
 print("  TPU CELL 1: CLONE REPO & DETECT TPU")
@@ -126,9 +128,8 @@ except Exception:
     pass
 
 # ---------------------------------------------------------------------------
-# 1.3  Clone Repository
+# 1.3  Resolve Target Repository + Clone/Update
 # ---------------------------------------------------------------------------
-
 # Accept repository from environment variable so each user can choose their own repo.
 # Supported formats:
 #   - Full HTTPS URL:  https://github.com/<owner>/<repo>.git
@@ -139,10 +140,7 @@ except Exception:
 # Priority:
 #   1) REPO_URL env var
 #   2) REPO_SLUG env var
-#   3) fallback default slug (safe local default)
-
-from urllib.parse import urlparse
-import re
+#   3) fallback default slug
 
 DEFAULT_REPO_SLUG = "phanirishindra/pruning-html"
 repo_input = (
@@ -152,27 +150,18 @@ repo_input = (
 ).strip()
 
 def normalize_repo_to_https_git(value: str) -> tuple[str, str]:
-    """
-    Normalize user input into:
-      - clone_url (https URL ending with .git)
-      - repo_slug (owner/repo)
-    """
-    # Case A: @owner/repo  -> owner/repo
     if value.startswith("@"):
         value = value[1:]
 
-    # Case B: owner/repo
     if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value):
         slug = value
         return f"https://github.com/{slug}.git", slug
 
-    # Case C: git@github.com:owner/repo(.git)?
     ssh_match = re.fullmatch(r"git@github\.com:([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:\.git)?", value)
     if ssh_match:
         slug = ssh_match.group(1)
         return f"https://github.com/{slug}.git", slug
 
-    # Case D: https://github.com/owner/repo(.git)?
     parsed = urlparse(value)
     if parsed.scheme in {"http", "https"} and parsed.netloc.lower() == "github.com":
         path = parsed.path.strip("/")
@@ -189,12 +178,7 @@ def normalize_repo_to_https_git(value: str) -> tuple[str, str]:
         "or 'git@github.com:owner/repo(.git)'."
     )
 
-try:
-    REPO_URL, REPO_SLUG = normalize_repo_to_https_git(repo_input)
-except ValueError as ve:
-    print(f"\n  ERROR: {ve}")
-    raise
-
+REPO_URL, REPO_SLUG = normalize_repo_to_https_git(repo_input)
 REPO_NAME = REPO_SLUG.split("/")[-1]
 
 if is_colab:
@@ -212,14 +196,13 @@ print(f"  Working dir:      {WORK_DIR}")
 if os.path.exists(os.path.join(WORK_DIR, ".git")):
     print("  Repo exists. Syncing with remote...")
 
-    # Ensure origin matches requested repo URL
     current_origin = subprocess.run(
         ["git", "-C", WORK_DIR, "remote", "get-url", "origin"],
         capture_output=True, text=True, check=False
     ).stdout.strip()
 
     if current_origin and current_origin != REPO_URL:
-        print(f"  Updating origin remote:")
+        print("  Updating origin remote...")
         print(f"    from: {current_origin}")
         print(f"    to:   {REPO_URL}")
         subprocess.run(
@@ -227,7 +210,6 @@ if os.path.exists(os.path.join(WORK_DIR, ".git")):
             check=True
         )
 
-    # Fetch + fast-forward pull for safety
     subprocess.run(["git", "-C", WORK_DIR, "fetch", "origin"], check=False)
     pull_result = subprocess.run(
         ["git", "-C", WORK_DIR, "pull", "--ff-only"],
@@ -423,7 +405,11 @@ tracker_status = _ensure_timing_tracker(WORK_DIR)
 print(f"  timing_tracker status: {tracker_status}")
 
 # Setup Python path
-for p in [WORK_DIR, os.path.join(WORK_DIR, "notebook_cells_tpu")]:
+for p in [
+    WORK_DIR,
+    os.path.join(WORK_DIR, "notebook_cells_tpu"),
+    os.path.join(WORK_DIR, "air_llm"),
+]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
