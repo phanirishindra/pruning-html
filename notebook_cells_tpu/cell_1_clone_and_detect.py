@@ -413,6 +413,23 @@ for p in [
     if p not in sys.path:
         sys.path.insert(0, p)
 
+# Configure timing tracker (one-time per run)
+try:
+    from timing_tracker import configure_tracker
+    tracker = configure_tracker(
+        tracker_name="tpu_pipeline",
+        repo_slug=REPO_SLUG,
+        platform_name="colab" if is_colab else "kaggle" if is_kaggle else "local",
+        device_name="tpu" if tpu_available else "gpu_or_cpu",
+        persist=True,
+        artifacts_dir=os.path.join(WORK_DIR, "artifacts", "timing"),
+        auto_print=True,
+    )
+    print("  timing_tracker: configured")
+    print(f"  run_id:         {tracker.run_id}")
+except Exception as e:
+    print(f"  WARNING: timing_tracker configure failed: {e}")
+
 # Verify imports
 try:
     import tpu_config
