@@ -100,21 +100,32 @@ else:
     model_bf16_gb = 64
     model_params = "?B"
 
-fits = model_bf16_gb <= total_hbm * 0.85  # 85% usable after overhead
+# Extra caution tags for practical TPU inference
+risky_on_64gb = any(x in model_lower for x in ["24b", "32b", "72b"]) 
+
+# Conservative TPU fit heuristic:
+# - Reserve extra headroom for runtime + activations + KV cache
+# - Require stronger margin on 64GB-class TPU
+usable_hbm_gb = total_hbm * 0.70   # conservative usable budget
+fits = model_bf16_gb <= usable_hbm_gb
 
 print(f"  TPU:            {tpu_ver} ({cores} cores x {hbm_per_core} GB = {total_hbm} GB)")
 print(f"  Model:          {MODEL_ID} ({model_params} params)")
 print(f"  Model size:     ~{model_bf16_gb} GB in {DTYPE}")
-print(f"  Available HBM:  ~{int(total_hbm * 0.85)} GB (85% usable)")
+print(f"  Usable HBM:     ~{int(usable_hbm_gb)} GB (70% conservative)")
 print(f"  Fits in memory: {'YES' if fits else 'NO'}")
 
 if not fits:
-    print(f"\n  WARNING: {MODEL_ID} ({model_bf16_gb} GB) may not fit in {total_hbm} GB HBM.")
-    print(f"  Recommendations:")
+    print(f"\n  WARNING: {MODEL_ID} (~{model_bf16_gb} GB weights) is unlikely to be stable on {total_hbm} GB TPU HBM.")
+    print("  Reason: runtime overhead + activations + KV cache reduce practical capacity.")
+    print("  Recommendations:")
     if total_hbm <= 64:
-        print(f"    - Use Qwen/Qwen2.5-32B-Instruct (64 GB) or smaller")
-        print(f"    - Or switch to Kaggle TPU v3-8 (128 GB)")
-    print(f"    - Or use notebook_cells/ (GPU version) with AirLLM")
+        print("    - Prefer 14B (recommended for TPU v2-8 / 64 GB)")
+        print("    - Avoid 24B/32B for long-context generation on 64 GB")
+        print("    - Use Kaggle TPU v3-8 (128 GB) for larger models")
+    else:
+        print("    - Prefer <=32B unless you aggressively optimize memory")
+    print("    - Or use notebook_cells/ (GPU version) with AirLLM")
 
 # ---------------------------------------------------------------------------
 # 4.4  Disk Space Check
