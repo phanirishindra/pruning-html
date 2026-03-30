@@ -421,7 +421,7 @@ try:
 except Exception as e:
     print(f"  WARNING: timing_tracker configure failed: {e}")
 
-# Setup Python path
+# Setup Python path (must come first)
 for p in [
     WORK_DIR,
     os.path.join(WORK_DIR, "notebook_cells_tpu"),
@@ -429,6 +429,10 @@ for p in [
 ]:
     if p not in sys.path:
         sys.path.insert(0, p)
+
+# then ensure/import timing_tracker
+tracker_status = _ensure_timing_tracker(WORK_DIR)
+print(f"  timing_tracker status: {tracker_status}")
 
 
 # Verify imports
