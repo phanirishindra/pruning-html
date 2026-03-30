@@ -44,9 +44,18 @@ print(f"\n  Torch dtype: {torch_dtype}")
 print(f"  TPU device:  {tpu_device}")
 
 # rough memory check (pre-flight)
-model_hint_gb = 64 if "32B" in MODEL_ID else (144 if "72B" in MODEL_ID else 14 if "7B" in MODEL_ID else 0)
+model_hint_gb = (
+    64 if "32B" in MODEL_ID else
+    144 if "72B" in MODEL_ID else
+    28 if "14B" in MODEL_ID else
+    14 if "7B" in MODEL_ID else
+    0
+)
 if model_hint_gb:
     print(f"  Model memory hint (bf16/f16): ~{model_hint_gb} GB total")
+
+if "32B" in MODEL_ID and os.environ.get("PJRT_DEVICE", "TPU") == "TPU":
+    print("  WARNING: 32B bf16 on free Colab TPU v2-8 is very likely to OOM. Prefer a 14B model.")
 
 print(f"\n  Loading model: {MODEL_ID}")
 start = time.time()
