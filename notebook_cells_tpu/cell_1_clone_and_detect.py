@@ -243,6 +243,185 @@ else:
 
 os.chdir(WORK_DIR)
 
+# ---------------------------------------------------------------------------
+# 1.4  Ensure timing_tracker module exists (self-healing fallback)
+# ---------------------------------------------------------------------------
+from pathlib import Path
+import importlib.util
+import textwrap
+
+def _is_importable(module_name: str) -> bool:
+    return importlib.util.find_spec(module_name) is not None
+
+def _ensure_timing_tracker(work_dir: str) -> str:
+    """
+    Ensure `timing_tracker` is importable.
+    Priority:
+      1) Existing import path
+      2) air_llm/timing_tracker.py (shim copy to notebook_cells_tpu)
+      3) Generate new notebook_cells_tpu/timing_tracker.py
+    Returns status string.
+    """
+    if _is_importable("timing_tracker"):
+        return "existing"
+
+    nb_tpu_dir = Path(work_dir) / "notebook_cells_tpu"
+    air_llm_tracker = Path(work_dir) / "air_llm" / "timing_tracker.py"
+    target_tracker = nb_tpu_dir / "timing_tracker.py"
+
+    nb_tpu_dir.mkdir(parents=True, exist_ok=True)
+
+    # Option 1: copy from air_llm if present
+    if air_llm_tracker.exists():
+        target_tracker.write_text(air_llm_tracker.read_text(encoding="utf-8"), encoding="utf-8")
+        importlib.invalidate_caches()
+        if _is_importable("timing_tracker"):
+            return "copied_from_air_llm"
+
+    # Option 2: generate robust fallback tracker
+    tracker_code = textwrap.dedent(
+        '''
+        """
+        Lightweight timing tracker for notebook / TPU workflows.
+        Features:
+          - context manager timing blocks
+          - decorators for sync / async functions
+          - step-level logging
+          - summary table with totals
+          - optional JSON export
+          - safe fallback in all runtimes (Colab/Kaggle/Local)
+        """
+        from __future__ import annotations
+        import time
+        import json
+        import threading
+        from dataclasses import dataclass, asdict
+        from typing import Callable, Optional, Any, Dict, List
+        from contextlib import contextmanager
+
+        @dataclass
+        class TimingEvent:
+            name: str
+            start_ts: float
+            end_ts: float
+            duration_s: float
+            meta: Optional[Dict[str, Any]] = None
+
+        class TimingTracker:
+            def __init__(self, name: str = "default", auto_print: bool = True):
+                self.name = name
+                self.auto_print = auto_print
+                self._events: List[TimingEvent] = []
+                self._active: Dict[str, float] = {}
+                self._lock = threading.Lock()
+
+            def start(self, step: str):
+                now = time.perf_counter()
+                with self._lock:
+                    self._active[step] = now
+
+            def stop(self, step: str, meta: Optional[Dict[str, Any]] = None) -> float:
+                now = time.perf_counter()
+                with self._lock:
+                    if step not in self._active:
+                        raise KeyError(f"Step '{step}' was not started.")
+                    start = self._active.pop(step)
+                    dur = now - start
+                    self._events.append(TimingEvent(
+                        name=step, start_ts=start, end_ts=now, duration_s=dur, meta=meta
+                    ))
+                if self.auto_print:
+                    print(f"[timing] {step}: {dur:.3f}s")
+                return dur
+
+            @contextmanager
+            def track(self, step: str, meta: Optional[Dict[str, Any]] = None):
+                self.start(step)
+                try:
+                    yield
+                finally:
+                    self.stop(step, meta=meta)
+
+            def log(self, step: str, duration_s: float, meta: Optional[Dict[str, Any]] = None):
+                end = time.perf_counter()
+                start = end - float(duration_s)
+                with self._lock:
+                    self._events.append(TimingEvent(
+                        name=step, start_ts=start, end_ts=end,
+                        duration_s=float(duration_s), meta=meta
+                    ))
+                if self.auto_print:
+                    print(f"[timing] {step}: {duration_s:.3f}s (manual)")
+
+            def total(self) -> float:
+                return sum(e.duration_s for e in self._events)
+
+            def events(self) -> List[TimingEvent]:
+                return list(self._events)
+
+            def summary(self, sort_desc: bool = True) -> str:
+                rows = self.events()
+                if sort_desc:
+                    rows = sorted(rows, key=lambda e: e.duration_s, reverse=True)
+                lines = []
+                lines.append(f"Timing Summary [{self.name}]")
+                lines.append("-" * 72)
+                lines.append(f"{'Step':40} {'Seconds':>12} {'Pct':>8}")
+                lines.append("-" * 72)
+                total = self.total() or 1e-12
+                for e in rows:
+                    pct = (e.duration_s / total) * 100
+                    lines.append(f"{e.name[:40]:40} {e.duration_s:12.3f} {pct:7.2f}%")
+                lines.append("-" * 72)
+                lines.append(f"{'TOTAL':40} {self.total():12.3f} {100.00:7.2f}%")
+                text = "\\n".join(lines)
+                return text
+
+            def print_summary(self, sort_desc: bool = True):
+                print(self.summary(sort_desc=sort_desc))
+
+            def to_json(self, path: str):
+                payload = {
+                    "name": self.name,
+                    "total_s": self.total(),
+                    "events": [asdict(e) for e in self._events],
+                }
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, indent=2)
+
+        # Global default tracker
+        _DEFAULT_TRACKER = TimingTracker(name="global", auto_print=True)
+
+        def get_tracker() -> TimingTracker:
+            return _DEFAULT_TRACKER
+
+        @contextmanager
+        def track(step: str, meta: Optional[Dict[str, Any]] = None):
+            with _DEFAULT_TRACKER.track(step, meta=meta):
+                yield
+
+        def timed(step_name: Optional[str] = None):
+            def _decorator(fn: Callable):
+                name = step_name or fn.__name__
+                def _wrapped(*args, **kwargs):
+                    with _DEFAULT_TRACKER.track(name):
+                        return fn(*args, **kwargs)
+                return _wrapped
+            return _decorator
+        '''
+    ).strip() + "\n"
+
+    target_tracker.write_text(tracker_code, encoding="utf-8")
+    importlib.invalidate_caches()
+
+    if _is_importable("timing_tracker"):
+        return "generated_fallback"
+
+    return "failed"
+
+tracker_status = _ensure_timing_tracker(WORK_DIR)
+print(f"  timing_tracker status: {tracker_status}")
+
 # Setup Python path
 for p in [WORK_DIR, os.path.join(WORK_DIR, "notebook_cells_tpu")]:
     if p not in sys.path:
