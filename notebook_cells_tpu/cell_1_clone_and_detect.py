@@ -404,15 +404,6 @@ def _ensure_timing_tracker(work_dir: str) -> str:
 tracker_status = _ensure_timing_tracker(WORK_DIR)
 print(f"  timing_tracker status: {tracker_status}")
 
-# Setup Python path
-for p in [
-    WORK_DIR,
-    os.path.join(WORK_DIR, "notebook_cells_tpu"),
-    os.path.join(WORK_DIR, "air_llm"),
-]:
-    if p not in sys.path:
-        sys.path.insert(0, p)
-
 # Configure timing tracker (one-time per run)
 try:
     from timing_tracker import configure_tracker
@@ -429,6 +420,16 @@ try:
     print(f"  run_id:         {tracker.run_id}")
 except Exception as e:
     print(f"  WARNING: timing_tracker configure failed: {e}")
+
+# Setup Python path
+for p in [
+    WORK_DIR,
+    os.path.join(WORK_DIR, "notebook_cells_tpu"),
+    os.path.join(WORK_DIR, "air_llm"),
+]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
 
 # Verify imports
 try:
