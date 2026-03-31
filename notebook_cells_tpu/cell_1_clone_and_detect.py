@@ -63,11 +63,11 @@ try:
     import torch_xla.core.xla_model as xm
 
     # Get TPU device
-    device = torch.xla_device()
+    device = torch_xla.device()
     tpu_available = True
 
     # Detect core count
-    tpu_cores = xm.xrt_world_size() if hasattr(xm, 'xrt_world_size') else 8
+    tpu_cores = xm.xrt_world_size() if hasattr(xm, "xrt_world_size") else 8
 
     # Determine TPU version from environment or device string
     device_str = str(device)
@@ -96,36 +96,34 @@ try:
     print(f"  Tensor test:    PASSED")
     print(f"  torch_xla:      {torch_xla.__version__}")
 
-    # Model size guidance
     # Model size guidance + export MODEL_NAME for downstream config
     print(f"\n  Model Capacity Estimate ({total_hbm_gb} GB HBM):")
     if total_hbm_gb >= 128:
-      recommended_model = "Qwen/Qwen2.5-32B-Instruct"
-      print("    Qwen2.5-32B (bfloat16): YES (needs ~64 GB), comfortable on 128 GB")
+        recommended_model = "Qwen/Qwen2.5-32B-Instruct"
+        print("    Qwen2.5-32B (bfloat16): YES (needs ~64 GB), comfortable on 128 GB")
     elif total_hbm_gb >= 64:
-      recommended_model = "Qwen/Qwen2.5-14B-Instruct"
-      print("    Qwen2.5-14B (bfloat16): YES (needs ~28 GB, practical headroom)")
-      print("    Qwen2.5-7B  (bfloat16): YES (needs ~14 GB)")
+        recommended_model = "Qwen/Qwen2.5-14B-Instruct"
+        print("    Qwen2.5-14B (bfloat16): YES (needs ~28 GB, practical headroom)")
+        print("    Qwen2.5-7B  (bfloat16): YES (needs ~14 GB)")
     else:
-      recommended_model = "Qwen/Qwen2.5-3B-Instruct"
-      print("    Qwen2.5-3B  (bfloat16): YES")
-      print("    Larger models may not fit.")
+        recommended_model = "Qwen/Qwen2.5-3B-Instruct"
+        print("    Qwen2.5-3B  (bfloat16): YES")
+        print("    Larger models may not fit.")
 
-# Respect explicit user MODEL_NAME override; otherwise set recommended model
-if not selected_model:
-    selected_model = recommended_model
-    os.environ["MODEL_NAME"] = selected_model
+    # Respect explicit user MODEL_NAME override; otherwise set recommended model
+    if not selected_model:
+        selected_model = recommended_model
+        os.environ["MODEL_NAME"] = selected_model
 
-# Export useful runtime info for tpu_config
-os.environ["TPU_AVAILABLE"] = "1"
-os.environ["TPU_TYPE"] = tpu_type
-os.environ["TPU_CORES"] = str(tpu_cores)
-os.environ["TPU_HBM_PER_CORE_GB"] = str(tpu_hbm_per_core_gb)
-os.environ["TOTAL_HBM_GB"] = str(total_hbm_gb)
+    # Export useful runtime info for tpu_config
+    os.environ["TPU_AVAILABLE"] = "1"
+    os.environ["TPU_TYPE"] = tpu_type
+    os.environ["TPU_CORES"] = str(tpu_cores)
+    os.environ["TPU_HBM_PER_CORE_GB"] = str(tpu_hbm_per_core_gb)
+    os.environ["TOTAL_HBM_GB"] = str(total_hbm_gb)
 
-print(f"  Selected model: {selected_model}")
-print("  Exported env:   MODEL_NAME, TPU_* , TOTAL_HBM_GB")
-    
+    print(f"  Selected model: {selected_model}")
+    print("  Exported env:   MODEL_NAME, TPU_* , TOTAL_HBM_GB")
 
 except ImportError:
     print("\n  ERROR: torch_xla not installed.")
@@ -136,9 +134,25 @@ except ImportError:
         print("    Settings > Accelerator > TPU v3-8")
     print("\n  Falling back: will attempt to install in Cell 2.")
 
+    # Safe fallback export
+    os.environ["TPU_AVAILABLE"] = "0"
+    if not selected_model:
+        selected_model = "Qwen/Qwen2.5-3B-Instruct"
+        os.environ["MODEL_NAME"] = selected_model
+    os.environ["TOTAL_HBM_GB"] = str(total_hbm_gb)
+    print(f"  Selected model: {selected_model}")
+
 except Exception as e:
     print(f"\n  TPU detection failed: {e}")
     print("  Ensure TPU runtime is selected.")
+
+    # Safe fallback export
+    os.environ["TPU_AVAILABLE"] = "0"
+    if not selected_model:
+        selected_model = "Qwen/Qwen2.5-3B-Instruct"
+        os.environ["MODEL_NAME"] = selected_model
+    os.environ["TOTAL_HBM_GB"] = str(total_hbm_gb)
+    print(f"  Selected model: {selected_model}")
 
 # Also check if GPU is available (user might have wrong runtime)
 try:
