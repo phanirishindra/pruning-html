@@ -1,4 +1,3 @@
-%%writefile /content/pruning-html/notebook_cells_tpu/cell_5_load_model.py
 #!/usr/bin/env python3
 import os
 import sys
