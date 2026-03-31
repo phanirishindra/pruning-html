@@ -63,7 +63,7 @@ try:
     import torch_xla.core.xla_model as xm
 
     # Get TPU device
-    device = torch_xla.device()
+    device = torch.xla.device()
     tpu_available = True
 
     # Detect core count
