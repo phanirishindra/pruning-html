@@ -14,7 +14,6 @@ import os
 import sys
 import subprocess
 import platform
-import time
 import re
 from urllib.parse import urlparse
 
@@ -31,7 +30,10 @@ is_colab = "google.colab" in sys.modules or bool(os.environ.get("COLAB_RELEASE_T
     os.path.exists("/content") and not is_kaggle
 )
 
-print(f"\n  Platform:  {'Colab' if is_colab else 'Kaggle' if is_kaggle else 'Local'}")
+platform_name = "colab" if is_colab else "kaggle" if is_kaggle else "local"
+os.environ["PLATFORM_NAME"] = platform_name  # canonical platform for downstream config
+
+print(f"\n  Platform:  {platform_name.capitalize()}")
 print(f"  Python:    {platform.python_version()}")
 print(f"  OS:        {platform.system()} {platform.release()}")
 
@@ -63,7 +65,7 @@ try:
     import torch_xla.core.xla_model as xm
 
     # Get TPU device
-    device = torch.xla.device()
+    device = xm.xla.device()
     tpu_available = True
 
     # Detect core count
@@ -85,7 +87,7 @@ try:
 
     # Quick tensor test on TPU
     test_tensor = torch.randn(2, 2, device=device)
-    result = (test_tensor @ test_tensor.T).cpu()
+    _ = (test_tensor @ test_tensor.T).cpu()
 
     print(f"\n  TPU DETECTED")
     print(f"  Type:           {tpu_type}")
@@ -438,27 +440,7 @@ def _ensure_timing_tracker(work_dir: str) -> str:
 
     return "failed"
 
-tracker_status = _ensure_timing_tracker(WORK_DIR)
-print(f"  timing_tracker status: {tracker_status}")
-
-# Configure timing tracker (one-time per run)
-try:
-    from timing_tracker import configure_tracker
-    tracker = configure_tracker(
-        tracker_name="tpu_pipeline",
-        repo_slug=REPO_SLUG,
-        platform_name="colab" if is_colab else "kaggle" if is_kaggle else "local",
-        device_name="tpu" if tpu_available else "gpu_or_cpu",
-        persist=True,
-        artifacts_dir=os.path.join(WORK_DIR, "artifacts", "timing"),
-        auto_print=True,
-    )
-    print("  timing_tracker: configured")
-    print(f"  run_id:         {tracker.run_id}")
-except Exception as e:
-    print(f"  WARNING: timing_tracker configure failed: {e}")
-
-# Setup Python path (must come first)
+# Setup Python path first (required before timing_tracker/tpu_config imports)
 for p in [
     WORK_DIR,
     os.path.join(WORK_DIR, "notebook_cells_tpu"),
@@ -467,9 +449,34 @@ for p in [
     if p not in sys.path:
         sys.path.insert(0, p)
 
-# then ensure/import timing_tracker
+# Ensure timing_tracker is importable
 tracker_status = _ensure_timing_tracker(WORK_DIR)
 print(f"  timing_tracker status: {tracker_status}")
+
+# Configure timing tracker with compatibility fallback
+try:
+    import timing_tracker as tt
+
+    if hasattr(tt, "configure_tracker"):
+        tracker = tt.configure_tracker(
+            tracker_name="tpu_pipeline",
+            repo_slug=REPO_SLUG,
+            platform_name=platform_name,
+            device_name="tpu" if tpu_available else "gpu_or_cpu",
+            persist=True,
+            artifacts_dir=os.path.join(WORK_DIR, "artifacts", "timing"),
+            auto_print=True,
+        )
+        print("  timing_tracker: configured via configure_tracker")
+        if hasattr(tracker, "run_id"):
+            print(f"  run_id:         {tracker.run_id}")
+    elif hasattr(tt, "get_tracker"):
+        tracker = tt.get_tracker()
+        print("  timing_tracker: configured via get_tracker fallback")
+    else:
+        print("  WARNING: timing_tracker has no configure_tracker/get_tracker")
+except Exception as e:
+    print(f"  WARNING: timing_tracker setup failed: {e}")
 
 
 # Verify imports
