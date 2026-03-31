@@ -39,7 +39,7 @@ ROW_COUNT = 100  # <-- CHANGE THIS: number of rows to process
 # Option 1: "Qwen/Qwen2.5-72B-Instruct"  - Best quality (Kaggle TPU only)
 # Option 2: "Qwen/Qwen2.5-32B-Instruct"  - Works on both Colab & Kaggle TPU
 # Option 3: "Qwen/Qwen2.5-7B-Instruct"   - Fast, fits anywhere
-MODEL_ID = "Qwen/Qwen2.5-32B-Instruct"  # <-- CHANGE THIS
+MODEL_ID = "Qwen/Qwen2.5-14B-Instruct"  # <-- CHANGE THIS
 
 # Precision: "float16", "bfloat16" (TPU-native), or "float32"
 # bfloat16 is the TPU-native format and gives best performance
@@ -50,14 +50,14 @@ MAX_TOKENS_PER_ROW = 8000
 MAX_NEW_TOKENS = 4096
 
 # Generation parameters
-TEMPERATURE = 0.3
+TEMPERATURE = 0.5
 TOP_P = 0.9
 
 # =============================================================================
 #  DATASET SETTINGS
 # =============================================================================
 SOURCE_DATASET = "williambrach/html-description-content"
-TOKENIZER_ID = "Qwen/Qwen2.5-7B-Instruct"
+TOKENIZER_ID = "Qwen/Qwen2.5-14B-Instruct"
 HTML_BUDGET_RATIO = 0.40
 
 # =============================================================================
