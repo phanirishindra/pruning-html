@@ -16,6 +16,7 @@ import sys
 import subprocess
 import platform
 import time
+import re
 from urllib.parse import urlparse
 
 print("\n" + "=" * 60)
