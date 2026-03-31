@@ -25,8 +25,11 @@ print("=" * 60)
 # ---------------------------------------------------------------------------
 # 1.1  Detect Environment
 # ---------------------------------------------------------------------------
-is_colab = os.path.exists("/content") and not os.path.exists("/kaggle")
-is_kaggle = os.path.exists("/kaggle/working")
+# More reliable runtime detection
+is_kaggle = bool(os.environ.get("KAGGLE_URL_BASE")) or os.path.exists("/kaggle/working")
+is_colab = "google.colab" in sys.modules or bool(os.environ.get("COLAB_RELEASE_TAG")) or (
+    os.path.exists("/content") and not is_kaggle
+)
 
 print(f"\n  Platform:  {'Colab' if is_colab else 'Kaggle' if is_kaggle else 'Local'}")
 print(f"  Python:    {platform.python_version()}")
@@ -41,6 +44,8 @@ tpu_available = False
 tpu_type = "unknown"
 tpu_cores = 0
 tpu_hbm_per_core_gb = 0
+total_hbm_gb = 0
+selected_model = os.environ.get("MODEL_NAME", "").strip()  # preserve user override if already set
 
 # Check for TPU environment variables (set by Colab/Kaggle)
 tpu_name = os.environ.get("TPU_NAME", "")
@@ -58,7 +63,7 @@ try:
     import torch_xla.core.xla_model as xm
 
     # Get TPU device
-    device = xm.xla_device()
+    device = torch.xla_device()
     tpu_available = True
 
     # Detect core count
@@ -92,15 +97,35 @@ try:
     print(f"  torch_xla:      {torch_xla.__version__}")
 
     # Model size guidance
+    # Model size guidance + export MODEL_NAME for downstream config
     print(f"\n  Model Capacity Estimate ({total_hbm_gb} GB HBM):")
     if total_hbm_gb >= 128:
-        print("    Qwen2.5-32B (bfloat16): YES (needs ~64 GB) , comfortable on 128 GB")
+      recommended_model = "Qwen/Qwen2.5-32B-Instruct"
+      print("    Qwen2.5-32B (bfloat16): YES (needs ~64 GB), comfortable on 128 GB")
     elif total_hbm_gb >= 64:
-        print("    Qwen2.5-14B (bfloat16): YES (needs ~28 GB, practical headroom)")
-        print("    Qwen2.5-7B  (bfloat16): YES (needs ~14 GB)")
+      recommended_model = "Qwen/Qwen2.5-14B-Instruct"
+      print("    Qwen2.5-14B (bfloat16): YES (needs ~28 GB, practical headroom)")
+      print("    Qwen2.5-7B  (bfloat16): YES (needs ~14 GB)")
     else:
-        print("    Qwen2.5-3B  (bfloat16): YES")
-        print("    Larger models may not fit.")
+      recommended_model = "Qwen/Qwen2.5-3B-Instruct"
+      print("    Qwen2.5-3B  (bfloat16): YES")
+      print("    Larger models may not fit.")
+
+# Respect explicit user MODEL_NAME override; otherwise set recommended model
+if not selected_model:
+    selected_model = recommended_model
+    os.environ["MODEL_NAME"] = selected_model
+
+# Export useful runtime info for tpu_config
+os.environ["TPU_AVAILABLE"] = "1"
+os.environ["TPU_TYPE"] = tpu_type
+os.environ["TPU_CORES"] = str(tpu_cores)
+os.environ["TPU_HBM_PER_CORE_GB"] = str(tpu_hbm_per_core_gb)
+os.environ["TOTAL_HBM_GB"] = str(total_hbm_gb)
+
+print(f"  Selected model: {selected_model}")
+print("  Exported env:   MODEL_NAME, TPU_* , TOTAL_HBM_GB")
+    
 
 except ImportError:
     print("\n  ERROR: torch_xla not installed.")
