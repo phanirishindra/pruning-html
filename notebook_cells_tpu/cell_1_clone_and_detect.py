@@ -94,14 +94,12 @@ try:
     # Model size guidance
     print(f"\n  Model Capacity Estimate ({total_hbm_gb} GB HBM):")
     if total_hbm_gb >= 128:
-        print("    Qwen2.5-72B (bfloat16): YES (needs ~144 GB, fits with KV-cache mgmt)")
         print("    Qwen2.5-32B (bfloat16): YES (needs ~64 GB) , comfortable on 128 GB")
     elif total_hbm_gb >= 64:
-        print("    Qwen2.5-32B (bfloat16): NO  (theoretical ~64 GB weights only; OOM in practice on 64 GB)")
         print("    Qwen2.5-14B (bfloat16): YES (needs ~28 GB, practical headroom)")
         print("    Qwen2.5-7B  (bfloat16): YES (needs ~14 GB)")
     else:
-        print("    Qwen2.5-7B  (bfloat16): YES")
+        print("    Qwen2.5-3B  (bfloat16): YES")
         print("    Larger models may not fit.")
 
 except ImportError:
